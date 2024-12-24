@@ -1,0 +1,4 @@
+flask==3.0.3
+keyring==25.5.0
+pywin32==301
+selenium==4.27.1
