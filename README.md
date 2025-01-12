@@ -1,5 +1,5 @@
 # Description
-Automatically refreshes all your Credit Karma linked accounts every 8-9 hours. Credit Karma itself does not
+Automatically refreshes all your Credit Karma linked accounts every ~12 hours. Credit Karma itself does not
 keep all accounts refreshed when you actually need to check your balances and transactions history. This
 ensures you'll always see up-to-date account info.
 

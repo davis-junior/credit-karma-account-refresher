@@ -9,6 +9,8 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+from constants import PARENT_CREDENTIAL_ACCOUNT
+from credentials import get_child_username, get_password
 from db import add_db_record
 from globals import current_otp_dict_list
 from otp import get_otp, update_otp
@@ -16,11 +18,11 @@ from utils import does_log_contain_any_string
 
 
 def refresh_accounts(
-    driver: WebDriver, cursor: sqlite3.Cursor, username: str, password: str
+    driver: WebDriver, cursor: sqlite3.Cursor, parent_username: str, parent_password: str
 ):
     global current_otp_dict_list
 
-    print(f"Refreshing accounts for username {username}...")
+    print(f"Refreshing accounts for username {parent_username}...")
 
     # navigate to URL
     print("Navigating to login page...")
@@ -65,18 +67,18 @@ def refresh_accounts(
         username_input_element.click()
         time.sleep(1)
         username_input_element.clear()
-        username_input_element.send_keys(username)
+        username_input_element.send_keys(parent_username)
         time.sleep(1)
         username_input_element.send_keys(Keys.TAB)
         # password_input_element.click()
         time.sleep(2)
 
         password_input_element.clear()
-        password_input_element.send_keys(password)
+        password_input_element.send_keys(parent_password)
         time.sleep(2)
 
         original_url = driver.current_url
-        update_otp("credit karma", username, "")
+        update_otp("credit karma", parent_username, "")
 
         # login_button_element.click()
         password_input_element.send_keys(Keys.ENTER)
@@ -167,13 +169,13 @@ def refresh_accounts(
         # wait for global otp to not be empty -- Flask thread should set it
         try:
             WebDriverWait(driver, 30).until(
-                lambda driver: get_otp("credit karma", username) != ""
+                lambda driver: get_otp("credit karma", parent_username) != ""
             )
         except:
             traceback.print_exc()
             print("Did not get SMS code")
 
-        if get_otp("credit karma", username) == "":
+        if get_otp("credit karma", parent_username) == "":
             # although it's possible to skip SMS code MFA here if your accoount is not encrolled,
             # it will be required later to get to the linked accounts page
             raise Exception("Did not get SMS code")
@@ -196,15 +198,15 @@ def refresh_accounts(
 
             # skip_sms_mfa = True
 
-    if skip_sms_mfa or get_otp("credit karma", username):
+    if skip_sms_mfa or get_otp("credit karma", parent_username):
         if not skip_sms_mfa:
             print(
-                f"Retrieved code {get_otp('credit karma', username)}. Attempting sign in with it..."
+                f"Retrieved code {get_otp('credit karma', parent_username)}. Attempting sign in with it..."
             )
             original_url = driver.current_url
 
             time.sleep(1)
-            sms_code_input_element.send_keys(get_otp("credit karma", username))
+            sms_code_input_element.send_keys(get_otp("credit karma", parent_username))
             time.sleep(1)
             sms_code_input_element.send_keys(Keys.ENTER)
 
@@ -261,59 +263,74 @@ def refresh_accounts(
                     "Found prompt for SMS code again. Cannot skip these ones though. Exiting refresh function since this is not handled yet."
                 )
 
-            # wait for at least 1 iframe
-            WebDriverWait(driver, 60).until(
-                lambda driver: driver.execute_script("return frames.length") > 0
-            )
+            try:
+                # wait for at least 1 iframe
+                WebDriverWait(driver, 60).until(
+                    lambda driver: driver.execute_script("return frames.length") > 0
+                )
 
-            # switch to correct iframe that contains the accounts container elem below
-            # note it is a nested one, so need to switch frames 2 or more times
-            accounts_container_elem = None
-            parent_frames_length = driver.execute_script("return frames.length")
-            for i in range(parent_frames_length):
-                driver.switch_to.frame(i)
+                # switch to correct iframe that contains the accounts container elem below
+                # note it is a nested one, so need to switch frames 2 or more times
+                accounts_container_elem = None
+                parent_frames_length = driver.execute_script("return frames.length")
+                for i in range(parent_frames_length):
+                    driver.switch_to.frame(i)
 
-                # likely not in parent iframe, but check in case of website redesign
-                # all accounts are in this div
+                    # likely not in parent iframe, but check in case of website redesign
+                    # all accounts are in this div
+                    try:
+                        accounts_container_elem = WebDriverWait(driver, 20).until(
+                            EC.presence_of_element_located(
+                                (By.CSS_SELECTOR, ".fdx-provider-results")
+                            )  # timeout error here
+                        )
+                    except:
+                        pass
+
+                    if accounts_container_elem is not None:
+                        print(f"Found accounts container elem in parent frame {i}")
+                        break
+
+                    child_frames_length = driver.execute_script("return frames.length")
+                    if child_frames_length > 0:
+                        for i2 in range(child_frames_length):
+                            driver.switch_to.frame(i2) # exception here sometimes, caught by surrounding try block
+                            # all accounts are in this div
+                            try:
+                                accounts_container_elem = WebDriverWait(driver, 30).until(
+                                    EC.presence_of_element_located(
+                                        (By.CSS_SELECTOR, ".fdx-provider-results")
+                                    )  # timeout error here
+                                )
+                            except:
+                                pass
+
+                            if accounts_container_elem is not None:
+                                print(
+                                    f"Found accounts container elem in parent frame {i}, child frame {i2}"
+                                )
+                                break
+
+                    if accounts_container_elem is not None:
+                        break
+
+                if accounts_container_elem is None:
+                    driver.switch_to.default_content()
+                    raise Exception("Could not find accounts container in any iframe")
+            except:
+                traceback.print_exc()
+
+                print("Navigating to linked accounts page...")
+                driver.get("https://www.creditkarma.com/connect/manage-accounts")
                 try:
-                    accounts_container_elem = WebDriverWait(driver, 20).until(
-                        EC.presence_of_element_located(
-                            (By.CSS_SELECTOR, ".fdx-provider-results")
-                        )  # timeout error here
+                    driver.execute_script(
+                        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
                     )
                 except:
                     pass
+                time.sleep(2)
 
-                if accounts_container_elem is not None:
-                    print(f"Found accounts container elem in parent frame {i}")
-                    break
-
-                child_frames_length = driver.execute_script("return frames.length")
-                if child_frames_length > 0:
-                    for i2 in range(child_frames_length):
-                        driver.switch_to.frame(i2)
-                        # all accounts are in this div
-                        try:
-                            accounts_container_elem = WebDriverWait(driver, 30).until(
-                                EC.presence_of_element_located(
-                                    (By.CSS_SELECTOR, ".fdx-provider-results")
-                                )  # timeout error here
-                            )
-                        except:
-                            pass
-
-                        if accounts_container_elem is not None:
-                            print(
-                                f"Found accounts container elem in parent frame {i}, child frame {i2}"
-                            )
-                            break
-
-                if accounts_container_elem is not None:
-                    break
-
-            if accounts_container_elem is None:
-                driver.switch_to.default_content()
-                raise Exception("Could not find accounts container in any iframe")
+                continue
 
             # inject console log to global var
             script = """
@@ -346,40 +363,223 @@ def refresh_accounts(
                     print(f"Skipping account {account_name}")
                     add_db_record(
                         cursor,
-                        username,
+                        parent_username,
                         account_name,
                         "SKIPPED",
                         "Manually specified to skip",
                     )
                     continue
 
+                refresh_alread_initiated_and_console_cleared = False
+
+                # handle accounts that need reconnected
+                try:
+                    error_notification_elem = account_elem.find_element(By.CSS_SELECTOR, "p.fdx-mc-error-notification-message")
+                    if "our connection to this account expired" in error_notification_elem.text.lower():
+                        print("Connection expired text detected and need to reconnect account")
+                        
+                        reconnect_button1 = account_elem.find_element(By.CSS_SELECTOR, "button.fdx-mc-error-notification-action")
+                        actions = ActionChains(driver)
+                        actions.scroll_to_element(reconnect_button1)
+                        actions.perform()
+                        reconnect_button1.click()
+                        time.sleep(2)
+
+                        # DOM reloads here, so wait for next reconnect button
+                        reconnect_button2 = WebDriverWait(driver, 15).until(
+                            EC.presence_of_element_located(
+                                (By.CSS_SELECTOR, "button[aria-label='Reconnect']")
+                            )
+                        )
+                        actions = ActionChains(driver)
+                        actions.scroll_to_element(reconnect_button2)
+                        actions.perform()
+
+                        reconnect_button2.click()
+                        time.sleep(2)
+
+                        # a new window will open where you directly sign in here
+                        original_window_handle = driver.current_window_handle
+                        WebDriverWait(driver, 15).until(EC.number_of_windows_to_be(2))
+                        switched_windows = False
+
+                        try:
+                            for window_handle in driver.window_handles:
+                                if window_handle != original_window_handle:
+                                    driver.switch_to.window(window_handle)
+                                    switched_windows = True
+                                    print("Switched to new window")
+
+                                    if "americanexpress.com" in driver.current_url:
+                                        child_account = "American Express"
+                                    elif "citi.com" in driver.current_url:
+                                        child_account = "Citi"
+                                    else:
+                                        raise Exception(f"Unsupported site to sign in with credentials: {driver.current_url}")
+                                    
+                                    child_username = get_child_username(PARENT_CREDENTIAL_ACCOUNT, parent_username, child_account)
+                                    child_password = get_password(PARENT_CREDENTIAL_ACCOUNT, parent_username, child_account, child_username)
+
+                                    if not child_username or not child_password:
+                                        raise Exception(f"No credentials found for child account {child_account} under parent user {parent_username}")
+
+                                    if "americanexpress.com" in driver.current_url:
+                                        user_id_input_elem = WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.CSS_SELECTOR, "input#eliloUserID")
+                                            )
+                                        )
+
+                                        password_input_elem = WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.CSS_SELECTOR, "input#eliloPassword")
+                                            )
+                                        )
+                                    elif "citi.com" in driver.current_url:
+                                        user_id_input_elem = WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.CSS_SELECTOR, "input#userid_input_mask")
+                                            )
+                                        )
+
+                                        password_input_elem = WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.CSS_SELECTOR, "input#password_input")
+                                            )
+                                        )
+
+                                    print(f"Logging in to {child_account}...")
+
+                                    user_id_input_elem.click()
+                                    time.sleep(1)
+                                    user_id_input_elem.clear()
+                                    user_id_input_elem.send_keys(child_username)
+                                    time.sleep(1)
+                                    user_id_input_elem.send_keys(Keys.TAB)
+                                    # password_input_elem.click()
+                                    time.sleep(2)
+
+                                    password_input_elem.clear()
+                                    password_input_elem.send_keys(child_password)
+                                    time.sleep(2)
+
+                                    original_url = driver.current_url
+
+                                    # login_button_element.click()
+                                    password_input_elem.send_keys(Keys.ENTER)
+
+                                    # wait for screen to change where checkboxes of all cards you want to authorize shows
+
+                                    if "americanexpress.com" in driver.current_url:
+                                        WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.CSS_SELECTOR, "input[type='checkbox']")
+                                            )
+                                        )
+                                    elif "citi.com" in driver.current_url:
+                                        WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.CSS_SELECTOR, ".cds-checkbox:has(input.cds-checkbox-input[type='checkbox'])")
+                                            )
+                                        )
+
+                                    # select all cards
+                                    print("Selecting all cards...")
+
+                                    if "americanexpress.com" in driver.current_url:
+                                        checkbox_elems = driver.find_elements(By.CSS_SELECTOR, "input[type='checkbox']")
+                                    elif "citi.com" in driver.current_url:
+                                        checkbox_elems = driver.find_elements(By.CSS_SELECTOR, ".cds-checkbox:has(input.cds-checkbox-input[type='checkbox'])")
+
+                                    for checkbox_elem in checkbox_elems:
+                                        actions = ActionChains(driver)
+                                        actions.scroll_to_element(checkbox_elem)
+                                        actions.perform()
+
+                                        checkbox_elem.click()
+                                        time.sleep(2)
+
+                                    # click submit button
+                                    # this selector works for both Amex and Citi
+                                    authorize_button = driver.find_element(By.XPATH, "//button[text()[contains(., 'Authorize')]]")
+                                    actions = ActionChains(driver)
+                                    actions.scroll_to_element(authorize_button)
+                                    actions.perform()
+
+                                    driver.execute_script(
+                                        "console.clear();"
+                                    )  # clear JavaScript console log
+                                    driver.execute_script("window.logs = [];")  # clear global var
+
+                                    authorize_button.click()
+                                    time.sleep(2)
+
+                                    # for Amex, an additional screen appears before refresh
+                                    # for Citi, this screen does not appear and refresh begins immediately
+                                    if "americanexpress.com" in driver.current_url:
+                                        # DOM updates here, so make sure to wait
+                                        # then click return to Inuit button
+                                        return_button = WebDriverWait(driver, 15).until(
+                                            EC.presence_of_element_located(
+                                                (By.XPATH, "//button[text()[contains(., 'Return')]]")
+                                            )
+                                        )
+
+                                        actions = ActionChains(driver)
+                                        actions.scroll_to_element(return_button)
+                                        actions.perform()
+
+                                        driver.execute_script(
+                                            "console.clear();"
+                                        )  # clear JavaScript console log
+                                        driver.execute_script("window.logs = [];")  # clear global var
+
+                                        return_button.click()
+                                        time.sleep(2)
+
+                                    # the window should automatically close and the normal refresh should happen now
+                                    # for both Amex and Citi
+                                    refresh_alread_initiated_and_console_cleared = True
+                                    break
+                        finally:
+                            # at least for Amex and Citi, the window is automatically closed, so don't need to close manually
+                            # if switched_windows:
+                            #     driver.close()
+                            driver.switch_to.window(original_window_handle)
+
+                except:
+                    traceback.print_exc()
+                    print("Likely no reconnect needed")
+
+
                 print(f"Refreshing account {account_name}")
                 try:
-                    more_options_button = account_elem.find_element(
-                        By.CSS_SELECTOR, "button[aria-label='More Options']"
-                    )
-                    actions = ActionChains(driver)
-                    actions.scroll_to_element(more_options_button)
-                    actions.perform()
-                    more_options_button.click()
-                    time.sleep(1)
-
-                    refresh_button_elem = WebDriverWait(driver, 15).until(
-                        EC.presence_of_element_located(
-                            (By.XPATH, "//li/span[contains(text(),'Refresh')]")
+                    if not refresh_alread_initiated_and_console_cleared:
+                        more_options_button = account_elem.find_element(
+                            By.CSS_SELECTOR, "button[aria-label='More Options']"
                         )
-                    )
-                    actions = ActionChains(driver)
-                    actions.scroll_to_element(refresh_button_elem)
-                    actions.perform()
+                        actions = ActionChains(driver)
+                        actions.scroll_to_element(more_options_button)
+                        actions.perform()
+                        more_options_button.click() # click intercepted exception here sometimes here sometimes, though handled by try block to try agian
+                        time.sleep(1)
 
-                    driver.execute_script(
-                        "console.clear();"
-                    )  # clear JavaScript console log
-                    driver.execute_script("window.logs = [];")  # clear global var
+                        refresh_button_elem = WebDriverWait(driver, 15).until(
+                            EC.presence_of_element_located(
+                                (By.XPATH, "//li/span[contains(text(),'Refresh')]")
+                            )
+                        )
+                        actions = ActionChains(driver)
+                        actions.scroll_to_element(refresh_button_elem)
+                        actions.perform()
 
-                    refresh_button_elem.click()
-                    time.sleep(2)
+                        driver.execute_script(
+                            "console.clear();"
+                        )  # clear JavaScript console log
+                        driver.execute_script("window.logs = [];")  # clear global var
+
+                        refresh_button_elem.click()
+                        time.sleep(2)
 
                     try:
                         # handle refresh sequence
@@ -393,7 +593,7 @@ def refresh_accounts(
                             "'connectionStatus':'MFA'",
                             "'connectionStatus': 'MFA'",
                         ]
-                        log_entry = WebDriverWait(driver, 120, 3).until(
+                        log_entry = WebDriverWait(driver, 120, 3).until( # exception here sometimes, though handled by try block to try agian
                             lambda driver: does_log_contain_any_string(
                                 driver, search_str_list
                             )
@@ -493,7 +693,12 @@ def refresh_accounts(
                         if security_info_required_elem is not None or mfa_status_in_log:
                             print("MFA required")
 
-                            update_otp(account_name, username, "")
+                            child_username = get_child_username(PARENT_CREDENTIAL_ACCOUNT, parent_username, account_name)
+
+                            if not child_username:
+                                raise Exception(f"Unable to find child username for {account_name} under parent {PARENT_CREDENTIAL_ACCOUNT}")
+
+                            update_otp(account_name, child_username, "")
 
                             text_to_phone_number_radio_button_label_elem = (
                                 WebDriverWait(driver, 10).until(
@@ -544,22 +749,22 @@ def refresh_accounts(
                             # wait for global otp to not be empty -- Flask thread should set it
                             try:
                                 WebDriverWait(driver, 30).until(
-                                    lambda driver: get_otp(account_name, username) != ""
+                                    lambda driver: get_otp(account_name, child_username) != ""
                                 )
                             except:
                                 traceback.print_exc()
                                 print("Did not get SMS code")
 
-                            if get_otp(account_name, username) == "":
+                            if get_otp(account_name, child_username) == "":
                                 raise Exception("Did not get SMS code")
                             else:
                                 print(
-                                    f"Retrieved code {get_otp(account_name, username)}. Attempting sign in with it..."
+                                    f"Retrieved code {get_otp(account_name, child_username)}. Attempting sign in with it..."
                                 )
 
                                 time.sleep(1)
                                 sms_code_input_element.send_keys(
-                                    get_otp(account_name, username)
+                                    get_otp(account_name, child_username)
                                 )
                                 time.sleep(1)
 
@@ -603,7 +808,7 @@ def refresh_accounts(
                                 print("Successful MFA sign in")
 
                         add_db_record(
-                            cursor, username, account_name, "REFRESHED", str(log_entry)
+                            cursor, parent_username, account_name, "REFRESHED", str(log_entry)
                         )
                         print(f"Refresh successful. Log entry found: {str(log_entry)}")
                         time.sleep(3)
@@ -614,24 +819,32 @@ def refresh_accounts(
                     except:
                         traceback.print_exc()
                         print("Problem refreshing account")
-                        add_db_record(
-                            cursor,
-                            username,
-                            account_name,
-                            "ERROR",
-                            "Exception while refreshing",
-                        )
 
-                        notification_detail_elem = driver.find_element(
-                            By.CSS_SELECTOR, ".fdx-notification-detail"
-                        )
-                        notification_detail_text = (
-                            notification_detail_elem.get_attribute("textContent")
-                        )
-                        # TODO: update above db record with this text as info
-                        if "Please try again later" in notification_detail_text:
-                            print(
-                                "Notification detail shows we need to try again later"
+                        db_info = "Exception while refreshing"
+                        try:
+                            notification_detail_elem = driver.find_element(
+                                By.CSS_SELECTOR, ".fdx-notification-detail"
+                            )
+                            notification_detail_text = (
+                                notification_detail_elem.get_attribute("textContent")
+                            )
+                            
+                            if notification_detail_text:
+                                extra_message = f"Notification detail text: {notification_detail_text}"
+                                print(extra_message)
+                                db_info += f" {extra_message}"
+
+                            if "Please try again later" in notification_detail_text:
+                                print(
+                                    "Notification detail shows we need to try again later"
+                                )
+                        finally:
+                            add_db_record(
+                                cursor,
+                                parent_username,
+                                account_name,
+                                "ERROR",
+                                db_info,
                             )
 
                         close_button = driver.find_element(
@@ -647,7 +860,7 @@ def refresh_accounts(
                     traceback.print_exc()
                     add_db_record(
                         cursor,
-                        username,
+                        parent_username,
                         account_name,
                         "ERROR",
                         "Exception while refreshing",

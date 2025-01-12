@@ -6,7 +6,7 @@ import threading
 
 from flask import Flask, request
 
-from constants import SCRIPT_DIR, FLASK_HOST, FLASK_DEFAULT_PORT
+from constants import SCRIPT_DIR, FLASK_HOST, FLASK_DEFAULT_PORT, PARENT_CREDENTIAL_ACCOUNT
 from globals import (
     current_otp_dict_list,
     credentials_dict_list,
@@ -62,16 +62,30 @@ def run_flask_app():
 
         username = ""
 
-        for credentials_dict in credentials_dict_list:
-            if (
-                not credentials_dict["account"].lower().strip()
-                == account.lower().strip()
-            ):
-                continue
+        # get username from filter name and credentials config
+        for parent_credentials_dict in credentials_dict_list:
+            if account.lower().strip() == PARENT_CREDENTIAL_ACCOUNT.lower().strip():
+                if (
+                    not parent_credentials_dict["account"].lower().strip()
+                    == account.lower().strip()
+                ):
+                    continue
 
-            if credentials_dict["username"].lower().strip() in filter_name.lower():
-                username = credentials_dict["username"]
-                break
+                if parent_credentials_dict["username"].lower().strip() in filter_name.lower():
+                    username = parent_credentials_dict["username"]
+                    break
+            else:
+                if "child_accounts" in parent_credentials_dict:
+                    for child_credentials_dict in parent_credentials_dict["child_accounts"]:
+                        if (
+                            not child_credentials_dict["account"].lower().strip()
+                            == account.lower().strip()
+                        ):
+                            continue
+
+                        if child_credentials_dict["username"].lower().strip() in filter_name.lower():
+                            username = child_credentials_dict["username"]
+                            break
 
         if not username:
             raise Exception(

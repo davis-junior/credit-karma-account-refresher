@@ -16,27 +16,27 @@ from globals import credentials_dict_list
 
 
 def refresh_all_accounts(cursor: sqlite3.Cursor):
-    for credentials_dict in credentials_dict_list:
+    for parent_credentials_dict in credentials_dict_list:
         # only get Credit Karma accounts
-        if credentials_dict["account"].lower().strip() != "credit karma":
+        if parent_credentials_dict["account"].lower().strip() != "credit karma":
             continue
 
         try:
             driver = get_new_driver()
-
+            #import pdb; pdb.set_trace(); return # TODO: delete
             refresh_accounts(
                 driver,
                 cursor,
-                credentials_dict["username"],
-                get_password(credentials_dict["account"], credentials_dict["username"]),
+                parent_credentials_dict["username"],
+                get_password(parent_credentials_dict["account"], parent_credentials_dict["username"]),
             )
             print(
-                f"Successfully refreshed Credit Karma accounts for username {credentials_dict['username']}"
+                f"Successfully refreshed Credit Karma accounts for username {parent_credentials_dict['username']}"
             )
         except:
             traceback.print_exc()
             print(
-                f"Error detected for Credit Karma username {credentials_dict['username']}. Trying again in about an hour..."
+                f"Error detected for Credit Karma username {parent_credentials_dict['username']}. Trying again in about an hour..."
             )
 
             time.sleep(3600 + random.randint(180, 900))
@@ -55,8 +55,8 @@ def credit_karma_credentials_exist() -> bool:
 
     if credentials_dict_list:
         # make sure at least one Credit Karma account is in credentials global
-        for credentials_dict in credentials_dict_list:
-            if credentials_dict["account"].lower().strip() == "credit karma":
+        for parent_credentials_dict in credentials_dict_list:
+            if parent_credentials_dict["account"].lower().strip() == "credit karma":
                 return True
 
     return False
@@ -93,8 +93,8 @@ def main():
         except:
             traceback.print_exc()
 
-        print("Waiting about 8-9 hours...")
-        time.sleep(28800 + random.randint(900, 3600))
+        print("Waiting about 12-13 hours...")
+        time.sleep(43200 + random.randint(900, 3600))
 
 
 if __name__ == "__main__":

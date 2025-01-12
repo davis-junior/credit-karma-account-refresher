@@ -2,3 +2,4 @@
 **/ckar_config/
 **/keys/*
 !**/keys/.gitkeep
+**/credit_karma.db
