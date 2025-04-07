@@ -8,6 +8,13 @@ import traceback
 from constants import PARENT_CREDENTIAL_ACCOUNT, CHILD_CREDENTIAL_ACCOUNTS
 
 
+def _get_uniform_account_name(account_name: str):
+    if "paypal" in account_name.lower():
+        return "PayPal"
+
+    return account_name
+
+
 def get_child_username(
     parent_account_name: str, parent_username: str, child_account_name: str
 ):
@@ -17,7 +24,8 @@ def get_child_username(
     for d in credentials_dict_list:
 
         if (
-            d["account"].lower().strip() == parent_account_name.lower().strip()
+            d["account"].lower().strip()
+            == _get_uniform_account_name(parent_account_name).lower().strip()
             and d["username"].lower().strip() == parent_username.lower().strip()
         ):
 
@@ -25,7 +33,7 @@ def get_child_username(
                 for child_d in d["child_accounts"]:
                     if (
                         child_d["account"].lower().strip()
-                        == child_account_name.lower().strip()
+                        == _get_uniform_account_name(child_account_name).lower().strip()
                     ):
                         return child_d["username"]
 
@@ -39,12 +47,12 @@ def get_password(
 
     if not child_account_name or not child_username:
         return keyring.get_password(
-            f"ckar-{parent_account_name.lower().replace(' ', '_')}",
+            f"ckar-{_get_uniform_account_name(parent_account_name).lower().replace(' ', '_')}",
             parent_username.strip(),
         )
     else:
         return keyring.get_password(
-            f"ckar-{parent_account_name.lower().replace(' ', '_')}-{child_account_name.lower().replace(' ', '_')}",
+            f"ckar-{_get_uniform_account_name(parent_account_name).lower().replace(' ', '_')}-{_get_uniform_account_name(child_account_name).lower().replace(' ', '_')}",
             f"{parent_username.strip()}-{child_username.strip()}",
         )
 
@@ -58,13 +66,13 @@ def set_password(
 ):
     if not child_account_name or not child_username:
         keyring.set_password(
-            f"ckar-{parent_account_name.lower().replace(' ', '_')}",
+            f"ckar-{_get_uniform_account_name(parent_account_name).lower().replace(' ', '_')}",
             parent_username.strip(),
             password,
         )
     else:
         keyring.set_password(
-            f"ckar-{parent_account_name.lower().replace(' ', '_')}-{child_account_name.lower().replace(' ', '_')}",
+            f"ckar-{_get_uniform_account_name(parent_account_name).lower().replace(' ', '_')}-{_get_uniform_account_name(child_account_name).lower().replace(' ', '_')}",
             f"{parent_username.strip()}-{child_username.strip()}",
             password,
         )

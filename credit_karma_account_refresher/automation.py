@@ -374,6 +374,7 @@ def refresh_accounts(
 
                 # handle accounts that need reconnected
                 try:
+                    error_notification_elem = None
                     error_notification_elem = account_elem.find_element(By.CSS_SELECTOR, "p.fdx-mc-error-notification-message")
                     if "our connection to this account expired" in error_notification_elem.text.lower():
                         print("Connection expired text detected and need to reconnect account")
@@ -555,31 +556,65 @@ def refresh_accounts(
                 print(f"Refreshing account {account_name}")
                 try:
                     if not refresh_alread_initiated_and_console_cleared:
-                        more_options_button = account_elem.find_element(
-                            By.CSS_SELECTOR, "button[aria-label='More Options']"
-                        )
-                        actions = ActionChains(driver)
-                        actions.scroll_to_element(more_options_button)
-                        actions.perform()
-                        more_options_button.click() # click intercepted exception here sometimes here sometimes, though handled by try block to try agian
-                        time.sleep(1)
+                        if error_notification_elem and "verify your info" in error_notification_elem.text.lower():
+                            reconnect_button1 = account_elem.find_element(By.CSS_SELECTOR, "button.fdx-mc-error-notification-action")
+                            actions = ActionChains(driver)
+                            actions.scroll_to_element(reconnect_button1)
+                            actions.perform()
 
-                        refresh_button_elem = WebDriverWait(driver, 15).until(
-                            EC.presence_of_element_located(
-                                (By.XPATH, "//li/span[contains(text(),'Refresh')]")
+                            # DOM reloads here, so wait for mobile MFA radio button
+                            # mobile_mfa_radio_button = WebDriverWait(driver, 15).until(
+                            #     EC.presence_of_element_located(
+                            #         (By.CSS_SELECTOR, "label[for='fdx-mfa-0-0'] .fdx-radio-label")
+                            #     )
+                            # )
+                            # actions = ActionChains(driver)
+                            # actions.scroll_to_element(mobile_mfa_radio_button)
+                            # actions.perform()
+
+                            # mobile_mfa_radio_button.click()
+                            # time.sleep(2)
+
+                            # reconnect_button2 = WebDriverWait(driver, 15).until(
+                            #     EC.presence_of_element_located(
+                            #         (By.CSS_SELECTOR, "button[aria-label='Connect']")
+                            #     )
+                            # )
+                            # actions = ActionChains(driver)
+                            # actions.scroll_to_element(reconnect_button2)
+                            # actions.perform()
+                        else:
+                            more_options_button = account_elem.find_element(
+                                By.CSS_SELECTOR, "button[aria-label='More Options']"
                             )
-                        )
-                        actions = ActionChains(driver)
-                        actions.scroll_to_element(refresh_button_elem)
-                        actions.perform()
+                            actions = ActionChains(driver)
+                            actions.scroll_to_element(more_options_button)
+                            actions.perform()
+                            more_options_button.click() # click intercepted exception here sometimes here sometimes, though handled by try block to try agian
+                            time.sleep(1)
+
+                            refresh_button_elem = WebDriverWait(driver, 15).until(
+                                EC.presence_of_element_located(
+                                    (By.XPATH, "//li/span[contains(text(),'Refresh')]")
+                                )
+                            )
+                            actions = ActionChains(driver)
+                            actions.scroll_to_element(refresh_button_elem)
+                            actions.perform()
 
                         driver.execute_script(
                             "console.clear();"
                         )  # clear JavaScript console log
                         driver.execute_script("window.logs = [];")  # clear global var
 
-                        refresh_button_elem.click()
-                        time.sleep(2)
+                        if error_notification_elem and "verify your info" in error_notification_elem.text.lower():
+                            reconnect_button1.click()
+                            time.sleep(2)
+                            # reconnect_button2.click()
+                            # time.sleep(2)
+                        else:
+                            refresh_button_elem.click()
+                            time.sleep(2)
 
                     try:
                         # handle refresh sequence
