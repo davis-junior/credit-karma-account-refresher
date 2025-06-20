@@ -51,9 +51,24 @@ def run_flask_app():
             otp_code = re.search("Code: (......)", message).group(1)
         elif "paypal" in filter_name.lower():
             account = "PayPal"
-            otp_code = re.search(
-                "PayPal: (......) is your security code", message
-            ).group(1)
+
+            match = re.search(
+                "PayPal: (......) is your code", message
+            )
+
+            if not match:
+                # old message but may come back some day
+                match = re.search(
+                    "PayPal: (......) is your security code", message
+                )
+
+            if not match:
+                # fallback
+                match = re.search(
+                    "PayPal: (......)", message
+                )
+
+            otp_code = match.group(1)
         else:
             raise Exception(f"Unkown account filter: {filter_name}")
 
